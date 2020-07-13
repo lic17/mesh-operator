@@ -19,6 +19,7 @@ func init() {
 	configcenter.Registry("zk", New)
 }
 
+// ConfigClient ...
 type ConfigClient struct {
 	conn          *zkClient.Conn
 	out           chan *types.ConfigEvent
@@ -26,26 +27,35 @@ type ConfigClient struct {
 	rootPathCache *zookeeper.PathCache
 }
 
+// New ...
 func New(opt options.Configuration) (component.ConfigurationCenter, error) {
 	var conn *zkClient.Conn
+	// Arguments has been supplied, we will initializing a client for synchronizing with config center
 	if len(opt.Address) > 0 {
-		conn, _, err := zkClient.Connect(opt.Address, time.Duration(opt.Timeout)*time.Second)
+		var err error
+		conn, _, err = zkClient.Connect(opt.Address, time.Duration(opt.Timeout)*time.Second)
 		if err != nil {
-			klog.Errorf("Get zookeeper client has an error: %v", err)
+			klog.Errorf("Creating zookeeper client has an error: %v", err)
+			return nil, fmt.Errorf("creating zookeeper client has en error: %+v", err)
 		}
 
-		if err != nil || conn == nil {
-			return nil, fmt.Errorf("get zookeeper client fail or client is nil, err:%+v", err)
-		}
+		return &ConfigClient{
+			conn:          conn,
+			out:           make(chan *types.ConfigEvent),
+			configEntries: make(map[string]*types.ConfiguratorConfig),
+			rootPathCache: nil,
+		}, nil
 	}
+
+	klog.Warningf("The command arguments of config center hasn't been supplied yet, skipping to initialize it.")
 	return &ConfigClient{
-		conn:          conn,
-		out:           make(chan *types.ConfigEvent),
-		configEntries: make(map[string]*types.ConfiguratorConfig),
+		conn:          nil,
 		rootPathCache: nil,
 	}, nil
+
 }
 
+// Start ...
 func (cc *ConfigClient) Start() error {
 	// Initializing a configuration for the service without a configurator
 	// cc.configEntries[constant.DefaultConfigName] = defaultConfig
@@ -57,6 +67,9 @@ func (cc *ConfigClient) Start() error {
 		}
 		cc.rootPathCache = rpc
 		go cc.eventLoop()
+	} else {
+		klog.Warningf("The connection of zookeeper is nil, skipping to start config center.")
+		return nil
 	}
 
 	// FIXME just for debug
@@ -132,6 +145,7 @@ func (cc *ConfigClient) eventLoop() {
 	}
 }
 
+// Events ...
 func (cc *ConfigClient) Events() <-chan *types.ConfigEvent {
 	return cc.out
 }
@@ -148,12 +162,13 @@ func (cc *ConfigClient) getData(path string) []byte {
 	return data
 }
 
-// Find the configurator from the caches for this service,
+// FindConfiguratorConfig find the configurator from the caches for this service,
 // return a nil value if there is no result matches this service.
 func (cc *ConfigClient) FindConfiguratorConfig(serviceName string) *types.ConfiguratorConfig {
 	return cc.configEntries[serviceName]
 }
 
+// Stop ...
 func (cc *ConfigClient) Stop() error {
 	return nil
 }

@@ -1,7 +1,5 @@
 /*
 Copyright 2020 The Symcn Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
@@ -14,7 +12,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package appmeshconfig
+package configuraredservice
 
 import (
 	"context"
@@ -26,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestReconcileAppMeshConfig_reconcileDestinationRule(t *testing.T) {
+func TestReconcileConfiguraredService_reconcileVirtualService(t *testing.T) {
 	fakeScheme := GetFakeScheme()
 	type fields struct {
 		client     client.Client
@@ -36,8 +34,7 @@ func TestReconcileAppMeshConfig_reconcileDestinationRule(t *testing.T) {
 	}
 	type args struct {
 		ctx context.Context
-		cr  *meshv1.AppMeshConfig
-		svc *meshv1.Service
+		cr  *meshv1.ConfiguraredService
 	}
 	tests := []struct {
 		name    string
@@ -46,7 +43,7 @@ func TestReconcileAppMeshConfig_reconcileDestinationRule(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "test-reconcile-destination-create-ok",
+			name: "test-reconcile-virtualservice-create-ok",
 			fields: fields{
 				client:     GetFakeClient(TestMeshConfig),
 				scheme:     fakeScheme,
@@ -55,52 +52,49 @@ func TestReconcileAppMeshConfig_reconcileDestinationRule(t *testing.T) {
 			},
 			args: args{
 				ctx: context.Background(),
-				cr:  amcTestOK,
-				svc: testOKService,
+				cr:  smeTestOK,
 			},
 			wantErr: false,
 		},
 		{
-			name: "test-reconcile-destination-update-ok",
+			name: "test-reconcile-virtualservice-update-ok",
 			fields: fields{
-				client:     GetFakeClient(TestMeshConfig, amcTestOK, fakeDestinationRule),
+				client:     GetFakeClient(TestMeshConfig, smeTestOK, fakeVirtualService),
 				scheme:     fakeScheme,
 				opt:        TestOpt,
 				meshConfig: TestMeshConfig,
 			},
 			args: args{
 				ctx: context.Background(),
-				cr:  amcTestOK,
-				svc: testUpdateOKService,
+				cr:  smeTestOK,
 			},
 			wantErr: false,
 		},
 		{
-			name: "test-reconcile-destination-delete-ok",
+			name: "test-reconcile-virtualservice-delete-ok",
 			fields: fields{
-				client:     GetFakeClient(TestMeshConfig, amcTestOK, fakeDestinationRule, fakeDeleteDestinationRule),
+				client:     GetFakeClient(TestMeshConfig, smeTestOK, fakeVirtualService, fakeDeleteVirtualService),
 				scheme:     fakeScheme,
 				opt:        TestOpt,
 				meshConfig: TestMeshConfig,
 			},
 			args: args{
 				ctx: context.Background(),
-				cr:  amcTestOK,
-				svc: testUpdateOKService,
+				cr:  smeTestOK,
 			},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := &ReconcileAppMeshConfig{
+			r := &ReconcileConfiguraredService{
 				client:     tt.fields.client,
 				scheme:     tt.fields.scheme,
 				opt:        tt.fields.opt,
 				meshConfig: tt.fields.meshConfig,
 			}
-			if err := r.reconcileDestinationRule(tt.args.ctx, tt.args.cr, tt.args.svc); (err != nil) != tt.wantErr {
-				t.Errorf("ReconcileAppMeshConfig.reconcileDestinationRule() error = %v, wantErr %v", err, tt.wantErr)
+			if err := r.reconcileVirtualService(tt.args.ctx, tt.args.cr); (err != nil) != tt.wantErr {
+				t.Errorf("ReconcileConfiguraredService.reconcileVirtualService() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

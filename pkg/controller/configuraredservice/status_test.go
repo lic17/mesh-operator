@@ -1,4 +1,4 @@
-package appmeshconfig
+package configuraredservice
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-func TestReconcileAppMeshConfig_updateStatus(t *testing.T) {
+func TestReconcileConfiguraredService_updateStatus(t *testing.T) {
 	fakeScheme := GetFakeScheme()
 	type fields struct {
 		client     client.Client
@@ -25,7 +25,7 @@ func TestReconcileAppMeshConfig_updateStatus(t *testing.T) {
 	type args struct {
 		ctx context.Context
 		req reconcile.Request
-		cr  *meshv1.AppMeshConfig
+		cr  *meshv1.ConfiguraredService
 	}
 	tests := []struct {
 		name    string
@@ -37,7 +37,7 @@ func TestReconcileAppMeshConfig_updateStatus(t *testing.T) {
 			name: "test-status-update-ok",
 			fields: fields{
 				client: GetFakeClient(
-					amcTestOK,
+					smeTestOK,
 					fakeServiceEntry,
 					fakeVirtualService,
 					fakeDestinationRule,
@@ -50,10 +50,10 @@ func TestReconcileAppMeshConfig_updateStatus(t *testing.T) {
 			args: args{
 				ctx: context.TODO(),
 				req: reconcile.Request{NamespacedName: types.NamespacedName{
-					Name:      "amc-test-case",
+					Name:      "sme-test-case",
 					Namespace: "sym-test",
 				}},
-				cr: amcTestOK,
+				cr: smeTestOK,
 			},
 			wantErr: false,
 		},
@@ -68,17 +68,17 @@ func TestReconcileAppMeshConfig_updateStatus(t *testing.T) {
 			args: args{
 				ctx: context.TODO(),
 				req: reconcile.Request{NamespacedName: types.NamespacedName{
-					Name:      "amc-test-case",
+					Name:      "sme-test-case",
 					Namespace: "sym-test",
 				}},
-				cr: amcTestOK,
+				cr: smeTestOK,
 			},
 			wantErr: true,
 		},
 		{
 			name: "test-status-update-distributing",
 			fields: fields{
-				client:     GetFakeClient(amcTestOK, fakeServiceEntry, fakeVirtualService),
+				client:     GetFakeClient(smeTestOK, fakeServiceEntry, fakeVirtualService),
 				scheme:     fakeScheme,
 				opt:        TestOpt,
 				meshConfig: TestMeshConfig,
@@ -86,17 +86,17 @@ func TestReconcileAppMeshConfig_updateStatus(t *testing.T) {
 			args: args{
 				ctx: context.TODO(),
 				req: reconcile.Request{NamespacedName: types.NamespacedName{
-					Name:      "amc-test-case",
+					Name:      "sme-test-case",
 					Namespace: "sym-test",
 				}},
-				cr: amcTestOK,
+				cr: smeTestOK,
 			},
 			wantErr: false,
 		},
 		{
 			name: "test-status-update-undistributed",
 			fields: fields{
-				client:     GetFakeClient(amcTestOK),
+				client:     GetFakeClient(smeTestOK),
 				scheme:     fakeScheme,
 				opt:        TestOpt,
 				meshConfig: TestMeshConfig,
@@ -104,24 +104,24 @@ func TestReconcileAppMeshConfig_updateStatus(t *testing.T) {
 			args: args{
 				ctx: context.TODO(),
 				req: reconcile.Request{NamespacedName: types.NamespacedName{
-					Name:      "amc-test-case",
+					Name:      "sme-test-case",
 					Namespace: "sym-test",
 				}},
-				cr: amcTestOK,
+				cr: smeTestOK,
 			},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := &ReconcileAppMeshConfig{
+			r := &ReconcileConfiguraredService{
 				client:     tt.fields.client,
 				scheme:     tt.fields.scheme,
 				opt:        tt.fields.opt,
 				meshConfig: tt.fields.meshConfig,
 			}
 			if err := r.updateStatus(tt.args.ctx, tt.args.req, tt.args.cr); (err != nil) != tt.wantErr {
-				t.Errorf("ReconcileAppMeshConfig.updateStatus() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ReconcileConfiguraredService.updateStatus() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			klog.Infof("[serviceentry] desired: %#v, distributed: %#v, undistributed: %#v",
 				tt.args.cr.Status.Status.ServiceEntry.Desired,

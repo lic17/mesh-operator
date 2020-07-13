@@ -141,30 +141,42 @@ func (r *ReconcileAppMeshConfig) getDestinationRuleStatus(ctx context.Context, c
 }
 
 func (r *ReconcileAppMeshConfig) count(ctx context.Context, cr *meshv1.AppMeshConfig, list runtime.Object) *int {
-	var c int
-	labels := &client.MatchingLabels{r.opt.SelectLabel: cr.Spec.AppName}
-	opts := &client.ListOptions{Namespace: cr.Namespace}
-	labels.ApplyToList(opts)
+	var zero int
+	var count *int
+	for _, svc := range cr.Spec.Services {
+		var c int
+		labels := &client.MatchingLabels{r.opt.SelectLabel: svc.OriginalName}
+		opts := &client.ListOptions{Namespace: cr.Namespace}
+		labels.ApplyToList(opts)
 
-	err := r.client.List(ctx, list, opts)
-	if err != nil {
-		klog.Errorf("%s/%s/%s collecting the substatus error: %v", cr.Namespace, cr.Name, list, err)
-		return nil
+		err := r.client.List(ctx, list, opts)
+		if err != nil {
+			klog.Errorf("%s/%s/%s collecting the substatus error: %v", cr.Namespace, svc.Name, list, err)
+			return nil
+		}
+
+		switch v := list.(type) {
+		case *networkingv1beta1.VirtualServiceList:
+			c = len(v.Items)
+		case *networkingv1beta1.ServiceEntryList:
+			c = len(v.Items)
+		case *networkingv1beta1.WorkloadEntryList:
+			c = len(v.Items)
+		case *networkingv1beta1.DestinationRuleList:
+			c = len(v.Items)
+		default:
+			klog.Errorf("invalid list type: %v", list)
+		}
+
+		if &c != nil {
+			if count == nil {
+				count = &zero
+			}
+			*count += c
+		}
 	}
 
-	switch v := list.(type) {
-	case *networkingv1beta1.VirtualServiceList:
-		c = len(v.Items)
-	case *networkingv1beta1.ServiceEntryList:
-		c = len(v.Items)
-	case *networkingv1beta1.WorkloadEntryList:
-		c = len(v.Items)
-	case *networkingv1beta1.DestinationRuleList:
-		c = len(v.Items)
-	default:
-		klog.Errorf("invalid list type: %v", list)
-	}
-	return &c
+	return count
 }
 
 func calcPhase(status *meshv1.Status) meshv1.ConfigPhase {

@@ -77,7 +77,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		Type: &networkingv1beta1.WorkloadEntry{}},
 		&handler.EnqueueRequestForOwner{
 			IsController: true,
-			OwnerType:    &meshv1.AppMeshConfig{},
+			OwnerType:    &meshv1.ConfiguraredService{},
 		})
 	if err != nil {
 		return err
@@ -87,7 +87,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		Type: &networkingv1beta1.VirtualService{}},
 		&handler.EnqueueRequestForOwner{
 			IsController: true,
-			OwnerType:    &meshv1.AppMeshConfig{},
+			OwnerType:    &meshv1.ConfiguraredService{},
 		})
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		Type: &networkingv1beta1.DestinationRule{}},
 		&handler.EnqueueRequestForOwner{
 			IsController: true,
-			OwnerType:    &meshv1.AppMeshConfig{},
+			OwnerType:    &meshv1.ConfiguraredService{},
 		})
 	if err != nil {
 		return err
@@ -107,7 +107,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		Type: &networkingv1beta1.ServiceEntry{}},
 		&handler.EnqueueRequestForOwner{
 			IsController: true,
-			OwnerType:    &meshv1.AppMeshConfig{},
+			OwnerType:    &meshv1.ConfiguraredService{},
 		})
 	if err != nil {
 		return err
@@ -161,23 +161,6 @@ func (r *ReconcileAppMeshConfig) Reconcile(request reconcile.Request) (reconcile
 		return reconcile.Result{}, err
 	}
 
-	// TODO(haidong): Is it requeue request after Spec changed 5 seconds later to update Status?
-	for _, svc := range instance.Spec.Services {
-		if err := r.reconcileWorkloadEntry(ctx, instance, svc); err != nil {
-			return reconcile.Result{}, err
-		}
-		if err := r.reconcileServiceEntry(ctx, instance, svc); err != nil {
-			return reconcile.Result{}, err
-		}
-		if err := r.reconcileDestinationRule(ctx, instance, svc); err != nil {
-			return reconcile.Result{}, err
-		}
-		if err := r.reconcileVirtualService(ctx, instance, svc); err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-
-	// Update Status
 	klog.Infof("Update AppMeshConfig[%s/%s] status...", request.Namespace, request.Name)
 	err = r.updateStatus(ctx, request, instance)
 	if err != nil {
