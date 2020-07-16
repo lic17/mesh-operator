@@ -1,8 +1,7 @@
 package handler
 
 import (
-	"context"
-	"fmt"
+	"github.com/symcn/mesh-operator/pkg/adapter/configcenter"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/symcn/mesh-operator/pkg/adapter/component"
@@ -13,30 +12,25 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // KubeSingleClusterEventHandler ...
 type KubeSingleClusterEventHandler struct {
-	meshConfig  *v1.MeshConfig
-	ctrlManager manager.Manager
+	ctrlManager   manager.Manager
+	configBuilder configcenter.ConfigBuilder
 }
 
 // NewKubeSingleClusterEventHandler ...
-func NewKubeSingleClusterEventHandler(mgr manager.Manager) (component.EventHandler, error) {
-	mc := &v1.MeshConfig{}
-	err := mgr.GetClient().Get(context.Background(), client.ObjectKey{
-		Name:      "sym-meshconfig",
-		Namespace: defaultNamespace,
-	}, mc)
-	if err != nil {
-		return nil, fmt.Errorf("loading mesh config has an error: %v", err)
+func NewKubeSingleClusterEventHandler(mgr manager.Manager, mc *v1.MeshConfig) (component.EventHandler, error) {
+	dcb := &DubboConfiguratorBuilder{
+		globalConfig:  mc,
+		defaultConfig: DubboDefaultConfig,
 	}
 
 	return &KubeSingleClusterEventHandler{
-		ctrlManager: mgr,
-		meshConfig:  mc,
+		ctrlManager:   mgr,
+		configBuilder: dcb,
 	}, nil
 }
 
@@ -61,31 +55,34 @@ func (kubeSceh *KubeSingleClusterEventHandler) ReplaceInstances(event *types.Ser
 
 	retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Convert a service event that noticed by zookeeper to a Service CRD
-		sme := convertEventToSme(event.Service)
+		cs := convertEvent(event.Service)
 
-		// meanwhile we should search a configurator for such service
-		config := configuratorFinder(event.Service.Name)
-		if config == nil {
-			dc := *DefaultConfigurator
-			dc.Key = event.Service.Name
-			setConfig(&dc, sme, kubeSceh.meshConfig)
+		var config *types.ConfiguratorConfig
+		if configuratorFinder == nil {
+			config = nil
 		} else {
-			setConfig(config, sme, kubeSceh.meshConfig)
+			// meanwhile we should search a configurator for such service
+			config = configuratorFinder(event.Service.Name)
+		}
+		if config == nil {
+			kubeSceh.configBuilder.SetConfig(cs, kubeSceh.configBuilder.GetDefaultConfig())
+		} else {
+			kubeSceh.configBuilder.SetConfig(cs, config)
 		}
 
-		// loading sme CR from k8s cluster
-		foundSme, err := get(&v1.ConfiguraredService{
+		// loading cs CR from k8s cluster
+		foundCs, err := get(&v1.ConfiguraredService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      utils.StandardizeServiceName(event.Service.Name),
 				Namespace: defaultNamespace,
 			},
 		}, kubeSceh.ctrlManager.GetClient())
 		if err != nil {
-			klog.Warningf("Can not find an existed sme CR: %v, then create such sme instead.", err)
-			return create(sme, kubeSceh.ctrlManager.GetClient())
+			klog.Warningf("Can not find an existed cs CR: %v, then create such cs instead.", err)
+			return create(cs, kubeSceh.ctrlManager.GetClient())
 		}
-		foundSme.Spec = sme.Spec
-		return update(foundSme, kubeSceh.ctrlManager.GetClient())
+		foundCs.Spec = cs.Spec
+		return update(foundCs, kubeSceh.ctrlManager.GetClient())
 	})
 
 }
@@ -121,43 +118,41 @@ func (kubeSceh *KubeSingleClusterEventHandler) AddConfigEntry(e *types.ConfigEve
 
 // ChangeConfigEntry ...
 func (kubeSceh *KubeSingleClusterEventHandler) ChangeConfigEntry(e *types.ConfigEvent, cachedServiceFinder func(s string) *types.Service) {
-	klog.Infof("event handler for a single cluster: change a configuration\n%v", e.Path)
+	klog.Infof("event handler for a single cluster: change a configuration %s", e.Path)
 	metrics.ChangedConfigurationCounter.Inc()
 	timer := prometheus.NewTimer(metrics.ChangingConfigurationHistogram)
 	defer timer.ObserveDuration()
 
 	retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		serviceName := e.ConfigEntry.Key
-		sme, err := get(&v1.ConfiguraredService{
+		cs, err := get(&v1.ConfiguraredService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      utils.StandardizeServiceName(serviceName),
 				Namespace: defaultNamespace,
 			},
 		}, kubeSceh.ctrlManager.GetClient())
 		if err != nil {
-			klog.Infof("Finding sme with name %s has an error: %v", serviceName, err)
+			klog.Infof("Finding cs with name %s has an error: %v", serviceName, err)
 			// TODO Is there a requirement to requeue this event?
 			return nil
 		}
 
-		// utilize this configurator for such amc CR
+		// utilize this configurator for such cs CR
 		if e.ConfigEntry == nil || !e.ConfigEntry.Enabled {
 			// TODO we really need to handle and think about the case that configuration has been disable.
-			dc := *DefaultConfigurator
-			dc.Key = serviceName
-			setConfig(&dc, sme, kubeSceh.meshConfig)
+			kubeSceh.configBuilder.SetConfig(cs, kubeSceh.configBuilder.GetDefaultConfig())
 		} else {
-			setConfig(e.ConfigEntry, sme, kubeSceh.meshConfig)
+			kubeSceh.configBuilder.SetConfig(cs, e.ConfigEntry)
 		}
 
-		return update(sme, kubeSceh.ctrlManager.GetClient())
+		return update(cs, kubeSceh.ctrlManager.GetClient())
 	})
 
 }
 
 // DeleteConfigEntry ...
 func (kubeSceh *KubeSingleClusterEventHandler) DeleteConfigEntry(e *types.ConfigEvent, cachedServiceFinder func(s string) *types.Service) {
-	klog.Infof("event handler for a single cluster: delete a configuration\n%v", e.Path)
+	klog.Infof("event handler for a single cluster: delete a configuration %s", e.Path)
 	metrics.DeletedConfigurationCounter.Inc()
 
 	retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -165,24 +160,22 @@ func (kubeSceh *KubeSingleClusterEventHandler) DeleteConfigEntry(e *types.Config
 		// Usually deleting event don't include the configuration data, so that we should
 		// parse the zNode path to decide what is the service name.
 		serviceName := utils.StandardizeServiceName(utils.ResolveServiceName(e.Path))
-		sme, err := get(&v1.ConfiguraredService{
+		cs, err := get(&v1.ConfiguraredService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      serviceName,
 				Namespace: defaultNamespace,
 			},
 		}, kubeSceh.ctrlManager.GetClient())
 		if err != nil {
-			klog.Infof("Finding sme with name %s has an error: %v", serviceName, err)
+			klog.Infof("Finding cs with name %s has an error: %v", serviceName, err)
 			// TODO Is there a requirement to requeue this event?
 			return nil
 		}
 
 		// Deleting a configuration of a service is similar to setting default configurator to this service
-		dc := *DefaultConfigurator
-		dc.Key = serviceName
-		setConfig(&dc, sme, kubeSceh.meshConfig)
+		kubeSceh.configBuilder.SetConfig(cs, kubeSceh.configBuilder.GetDefaultConfig())
 
-		return update(sme, kubeSceh.ctrlManager.GetClient())
+		return update(cs, kubeSceh.ctrlManager.GetClient())
 	})
 
 }
