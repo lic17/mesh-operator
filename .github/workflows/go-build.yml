@@ -26,7 +26,21 @@ jobs:
       run: go get -v -t -d ./...
 
     - name: Build
-      run: make build
+      run: make manager
+
+    - name: Add envTest binary files
+      run: |
+        os=$(go env GOOS)
+        arch=$(go env GOARCH)
+        curl -L https://go.kubebuilder.io/dl/2.3.1/${os}/${arch} | tar -xz -C /tmp/
+        sudo mv /tmp/kubebuilder_2.3.1_${os}_${arch} /usr/local/kubebuilder
+        export PATH=$PATH:/usr/local/kubebuilder/bin
 
     - name: Test
-      run: make test-controller
+      run: make test
+
+    - name: Upload Coverage report to CodeCov
+      uses: codecov/codecov-action@v1.0.0
+      with:
+        token: ${{secrets.CODECOV_TOKEN}}
+        file: ./coverage.txt

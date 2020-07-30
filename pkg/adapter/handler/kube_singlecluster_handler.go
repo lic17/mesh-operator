@@ -4,11 +4,11 @@ import (
 	"github.com/symcn/mesh-operator/pkg/adapter/configcenter"
 
 	"github.com/prometheus/client_golang/prometheus"
+	v1 "github.com/symcn/mesh-operator/api/v1alpha1"
 	"github.com/symcn/mesh-operator/pkg/adapter/component"
 	"github.com/symcn/mesh-operator/pkg/adapter/metrics"
 	"github.com/symcn/mesh-operator/pkg/adapter/types"
-	"github.com/symcn/mesh-operator/pkg/adapter/utils"
-	v1 "github.com/symcn/mesh-operator/pkg/apis/mesh/v1"
+	"github.com/symcn/mesh-operator/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog"
@@ -45,7 +45,8 @@ func (kubeSceh *KubeSingleClusterEventHandler) AddInstance(e *types.ServiceEvent
 }
 
 // ReplaceInstances ...
-func (kubeSceh *KubeSingleClusterEventHandler) ReplaceInstances(event *types.ServiceEvent, configuratorFinder func(s string) *types.ConfiguratorConfig) {
+func (kubeSceh *KubeSingleClusterEventHandler) ReplaceInstances(event *types.ServiceEvent,
+	configuratorFinder func(s string) *types.ConfiguratorConfig) {
 	klog.Infof("event handler for a single cluster: Replacing these instances(size: %d)\n%v", len(event.Instances), event.Instances)
 
 	metrics.SynchronizedServiceCounter.Inc()
@@ -71,9 +72,9 @@ func (kubeSceh *KubeSingleClusterEventHandler) ReplaceInstances(event *types.Ser
 		}
 
 		// loading cs CR from k8s cluster
-		foundCs, err := get(&v1.ConfiguraredService{
+		foundCs, err := get(&v1.ConfiguredService{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      utils.StandardizeServiceName(event.Service.Name),
+				Name:      utils.FormatToDNS1123(event.Service.Name),
 				Namespace: defaultNamespace,
 			},
 		}, kubeSceh.ctrlManager.GetClient())
@@ -92,9 +93,9 @@ func (kubeSceh *KubeSingleClusterEventHandler) DeleteService(event *types.Servic
 	klog.Infof("event handler for a single cluster: Deleting a service\n%v\n", event.Service)
 	metrics.DeletedServiceCounter.Inc()
 	retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		err := delete(&v1.ConfiguraredService{
+		err := delete(&v1.ConfiguredService{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      utils.StandardizeServiceName(event.Service.Name),
+				Name:      utils.FormatToDNS1123(event.Service.Name),
 				Namespace: defaultNamespace,
 			},
 		}, kubeSceh.ctrlManager.GetClient())
@@ -106,6 +107,58 @@ func (kubeSceh *KubeSingleClusterEventHandler) DeleteService(event *types.Servic
 // DeleteInstance ...
 func (kubeSceh *KubeSingleClusterEventHandler) DeleteInstance(e *types.ServiceEvent) {
 	klog.Warningf("Deleting an instance has not been implemented yet by single clusters handler.")
+}
+
+// ReplaceAccessorInstances ...
+func (kubeSceh *KubeSingleClusterEventHandler) ReplaceAccessorInstances(e *types.ServiceEvent,
+	getScopedServices func(s string) map[string]struct{}) {
+	klog.Infof("event handler for a single cluster: replacing the accessor's instances: %s", e.Service.Name)
+	metrics.ReplacedAccessorInstancesCounter.Inc()
+
+	instances := e.Instances
+	changedScopes := make(map[string]struct{})
+	for _, ins := range instances {
+		if ins != nil {
+			sk, ok := ins.Labels["app"]
+			if ok {
+				changedScopes[sk] = struct{}{}
+			}
+		}
+	}
+
+	for changedScope := range changedScopes {
+		scopedMapping := getScopedServices(changedScope)
+		var accessedServices []string
+		for s := range scopedMapping {
+			accessedServices = append(accessedServices, s)
+		}
+
+		sas := &v1.ServiceAccessor{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      utils.FormatToDNS1123(changedScope),
+				Namespace: defaultNamespace,
+			},
+			Spec: v1.ServiceAccessorSpec{
+				AccessHosts: accessedServices,
+			},
+		}
+
+		retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			foundSas, err := getScopedAccessServices(&v1.ServiceAccessor{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      utils.FormatToDNS1123(changedScope),
+					Namespace: defaultNamespace,
+				},
+			}, kubeSceh.ctrlManager.GetClient())
+			if err != nil {
+				klog.Warningf("Can not find an existed asm CR: %v, then create a new one instead.", err)
+				return createScopedAccessServices(foundSas, kubeSceh.ctrlManager.GetClient())
+			}
+			foundSas.Spec = sas.Spec
+			return updateScopedAccessServices(foundSas, kubeSceh.ctrlManager.GetClient())
+		})
+	}
+
 }
 
 // AddConfigEntry ...
@@ -125,9 +178,9 @@ func (kubeSceh *KubeSingleClusterEventHandler) ChangeConfigEntry(e *types.Config
 
 	retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		serviceName := e.ConfigEntry.Key
-		cs, err := get(&v1.ConfiguraredService{
+		cs, err := get(&v1.ConfiguredService{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      utils.StandardizeServiceName(serviceName),
+				Name:      utils.FormatToDNS1123(serviceName),
 				Namespace: defaultNamespace,
 			},
 		}, kubeSceh.ctrlManager.GetClient())
@@ -159,8 +212,8 @@ func (kubeSceh *KubeSingleClusterEventHandler) DeleteConfigEntry(e *types.Config
 		// an example for the path: /dubbo/config/dubbo/com.foo.mesh.test.Demo.configurators
 		// Usually deleting event don't include the configuration data, so that we should
 		// parse the zNode path to decide what is the service name.
-		serviceName := utils.StandardizeServiceName(utils.ResolveServiceName(e.Path))
-		cs, err := get(&v1.ConfiguraredService{
+		serviceName := utils.FormatToDNS1123(utils.ResolveServiceName(e.Path))
+		cs, err := get(&v1.ConfiguredService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      serviceName,
 				Namespace: defaultNamespace,

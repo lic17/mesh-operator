@@ -4,10 +4,10 @@ import (
 	"strconv"
 
 	"github.com/ghodss/yaml"
+	v1 "github.com/symcn/mesh-operator/api/v1alpha1"
 	"github.com/symcn/mesh-operator/pkg/adapter/constant"
 	"github.com/symcn/mesh-operator/pkg/adapter/types"
-	"github.com/symcn/mesh-operator/pkg/adapter/utils"
-	v1 "github.com/symcn/mesh-operator/pkg/apis/mesh/v1"
+	"github.com/symcn/mesh-operator/pkg/utils"
 	"k8s.io/klog"
 )
 
@@ -72,7 +72,7 @@ func (dcb *DubboConfiguratorBuilder) GetDefaultConfig() *types.ConfiguratorConfi
 
 // BuildPolicy configurator of this service belongs to the zNode with path looks like following:
 // e.g. /dubbo/config/dubbo/fooService.configurator
-func (dcb *DubboConfiguratorBuilder) BuildPolicy(cs *v1.ConfiguraredService, cc *types.ConfiguratorConfig) *v1.ConfiguraredService {
+func (dcb *DubboConfiguratorBuilder) BuildPolicy(cs *v1.ConfiguredService, cc *types.ConfiguratorConfig) *v1.ConfiguredService {
 	cs.Spec.Policy = &v1.Policy{
 		LoadBalancer:   dcb.GetGlobalConfig().Spec.GlobalPolicy.LoadBalancer,
 		MaxConnections: dcb.GetGlobalConfig().Spec.GlobalPolicy.MaxConnections,
@@ -97,13 +97,45 @@ func (dcb *DubboConfiguratorBuilder) BuildPolicy(cs *v1.ConfiguraredService, cc 
 }
 
 // BuildSubsets ...
-func (dcb *DubboConfiguratorBuilder) BuildSubsets(cs *v1.ConfiguraredService, cc *types.ConfiguratorConfig) *v1.ConfiguraredService {
-	cs.Spec.Subsets = dcb.GetGlobalConfig().Spec.GlobalSubsets
+func (dcb *DubboConfiguratorBuilder) BuildSubsets(cs *v1.ConfiguredService, cc *types.ConfiguratorConfig) *v1.ConfiguredService {
+	// use globalsubset config choice subset
+	gsubsets := dcb.GetGlobalConfig().Spec.GlobalSubsets
+	ssmark := make(map[string]struct{})
+	for _, instance := range cs.Spec.Instances {
+		for _, gsub := range gsubsets {
+			if dcb.mapContains(gsub.Labels, instance.Labels) {
+				ssmark[gsub.Name] = struct{}{}
+				break
+			}
+		}
+	}
+
+	// build cs spec subset
+	for _, gsub := range gsubsets {
+		if _, ok := ssmark[gsub.Name]; ok {
+			cs.Spec.Subsets = append(cs.Spec.Subsets, gsub)
+		}
+	}
 	return cs
 }
 
+func (dcb *DubboConfiguratorBuilder) mapContains(std, obj map[string]string) bool {
+	renameMap := dcb.GetGlobalConfig().Spec.MeshLabelsRemap
+	for sk, sv := range std {
+		rk, ok := renameMap[sk]
+		if !ok {
+			rk = sk
+		}
+
+		if ov, ok := obj[rk]; !ok || ov != sv {
+			return false
+		}
+	}
+	return true
+}
+
 // BuildSourceLabels ...
-func (dcb *DubboConfiguratorBuilder) BuildSourceLabels(cs *v1.ConfiguraredService, cc *types.ConfiguratorConfig) *v1.ConfiguraredService {
+func (dcb *DubboConfiguratorBuilder) BuildSourceLabels(cs *v1.ConfiguredService, cc *types.ConfiguratorConfig) *v1.ConfiguredService {
 	var sls []*v1.SourceLabels
 	for _, subset := range dcb.GetGlobalConfig().Spec.GlobalSubsets {
 		sl := &v1.SourceLabels{
@@ -160,7 +192,7 @@ func (dcb *DubboConfiguratorBuilder) BuildSourceLabels(cs *v1.ConfiguraredServic
 }
 
 // BuildInstanceSetting ...
-func (dcb *DubboConfiguratorBuilder) BuildInstanceSetting(cs *v1.ConfiguraredService, cc *types.ConfiguratorConfig) *v1.ConfiguraredService {
+func (dcb *DubboConfiguratorBuilder) BuildInstanceSetting(cs *v1.ConfiguredService, cc *types.ConfiguratorConfig) *v1.ConfiguredService {
 	for index, ins := range cs.Spec.Instances {
 		if matched, c := matchInstance(ins, cc.Configs); matched {
 			cs.Spec.Instances[index].Weight = utils.ToUint32(c.Parameters["weight"])
@@ -217,7 +249,7 @@ func matchInstance(ins *v1.Instance, configs []types.ConfigItem) (bool, *types.C
 }
 
 // SetConfig ...
-func (dcb *DubboConfiguratorBuilder) SetConfig(cs *v1.ConfiguraredService, cc *types.ConfiguratorConfig) {
+func (dcb *DubboConfiguratorBuilder) SetConfig(cs *v1.ConfiguredService, cc *types.ConfiguratorConfig) {
 	// policy's setting
 	dcb.BuildPolicy(cs, cc)
 	// subset's setting

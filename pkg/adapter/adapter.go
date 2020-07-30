@@ -9,22 +9,22 @@ import (
 	"github.com/symcn/mesh-operator/pkg/adapter/configcenter"
 	"github.com/symcn/mesh-operator/pkg/adapter/constant"
 	"github.com/symcn/mesh-operator/pkg/adapter/handler"
-	"github.com/symcn/mesh-operator/pkg/adapter/options"
 	"github.com/symcn/mesh-operator/pkg/adapter/registry"
 	"github.com/symcn/mesh-operator/pkg/adapter/types"
+	"github.com/symcn/mesh-operator/pkg/option"
 	"k8s.io/klog"
 )
 
 // Adapter ...
 type Adapter struct {
-	opt            *options.Option
+	opt            *option.AdapterOption
 	registryClient component.Registry
 	configClient   component.ConfigurationCenter
 	eventHandlers  []component.EventHandler
 }
 
 // NewAdapter ...
-func NewAdapter(opt *options.Option) (*Adapter, error) {
+func NewAdapter(opt *option.AdapterOption) (*Adapter, error) {
 	// TODO init health check handler
 	// TODO init router
 
@@ -81,7 +81,7 @@ func (a *Adapter) Start(stop <-chan struct{}) error {
 
 	for {
 		select {
-		case event := <-a.registryClient.Events():
+		case event := <-a.registryClient.ServiceEvents():
 			klog.Infof("Registry component which has been received by adapter: %s", event.Service.Name)
 			switch event.EventType {
 			case types.ServiceAdded:
@@ -116,6 +116,16 @@ func (a *Adapter) Start(stop <-chan struct{}) error {
 					h.DeleteInstance(event)
 				}
 				klog.Infof("end handling event - DELETE INSTANCE with uuid: %s", uuid)
+			}
+		case ae := <-a.registryClient.AccessorEvents():
+			klog.Infof("Accessor which has been received by adapter: %v", ae)
+			switch ae.EventType {
+			case types.ServiceInstancesReplace:
+				for _, h := range a.eventHandlers {
+					h.ReplaceAccessorInstances(ae, a.registryClient.GetCachedScopedMapping)
+				}
+			default:
+				klog.Warningf("The event with %v type has not been support yet.", ae.EventType)
 			}
 		case ce := <-a.configClient.Events():
 			klog.Infof("Configuration component which has been received by adapter: %v", ce)

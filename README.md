@@ -1,4 +1,5 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/symcn/mesh-operator)](https://goreportcard.com/report/github.com/symcn/mesh-operator)
+[![codecov](https://codecov.io/gh/symcn/mesh-operator/branch/master/graph/badge.svg)](https://codecov.io/gh/symcn/mesh-operator)
 [![Actions Status](https://github.com/symcn/mesh-operator/workflows/go-build/badge.svg)](https://github.com/symcn/mesh-operator/actions?query=workflow%3Ago-build)
 [![Actions Status](https://github.com/symcn/mesh-operator/workflows/pre-commit/badge.svg)](https://github.com/symcn/mesh-operator/actions?query=workflow%3Apre-commit)
 # mesh-operator
@@ -42,13 +43,13 @@ Install CRD:
 
 ```shell
 $ cd deploy/crds
-$ kubectl apply -f mesh.symcn.com_appmeshconfigs_crd.yaml -f mesh.symcn.com_istioconfigs_crd.yaml -f mesh.symcn.com_meshconfigs_crd.yaml -f mesh.symcn.com_configuraredservices_crd.yaml
+$ kubectl apply -f mesh.symcn.com_appmeshconfigs_crd.yaml -f mesh.symcn.com_istioconfigs_crd.yaml -f mesh.symcn.com_meshconfigs_crd.yaml -f mesh.symcn.com_configuredservices_crd.yaml
 ```
 
 Install CRD no validations:
 ```shell
 $ cd deploy/crds
-$ kubectl apply -f simple_appmeshconfigs_crd.yaml -f simple_istioconfigs_crd.yaml -f simple_meshconfigs_crd.yaml -f simple_configuraredservice_crd.yaml
+$ kubectl apply -f simple_appmeshconfigs_crd.yaml -f simple_istioconfigs_crd.yaml -f simple_meshconfigs_crd.yaml -f simple_configuredservice_crd.yaml
 ```
 
 Create ClusterRole, ClusterRoleBinding and ServiceAccount:

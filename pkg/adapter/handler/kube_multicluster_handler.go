@@ -3,10 +3,11 @@ package handler
 import (
 	"context"
 	"fmt"
-	"github.com/symcn/mesh-operator/pkg/adapter/configcenter"
-	v1 "github.com/symcn/mesh-operator/pkg/apis/mesh/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sync"
+
+	v1 "github.com/symcn/mesh-operator/api/v1alpha1"
+	"github.com/symcn/mesh-operator/pkg/adapter/configcenter"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/symcn/mesh-operator/pkg/adapter/component"
@@ -77,11 +78,11 @@ func (kubeMceh *KubeMultiClusterEventHandler) ReplaceInstances(event *types2.Ser
 	wg := sync.WaitGroup{}
 	wg.Add(len(kubeMceh.handlers))
 	for _, h := range kubeMceh.handlers {
-		go func() {
+		go func(handler component.EventHandler) {
 			defer wg.Done()
 
-			h.ReplaceInstances(event, configuratorFinder)
-		}()
+			handler.ReplaceInstances(event, configuratorFinder)
+		}(h)
 	}
 	wg.Wait()
 }
@@ -95,11 +96,10 @@ func (kubeMceh *KubeMultiClusterEventHandler) DeleteService(event *types2.Servic
 	wg := sync.WaitGroup{}
 	wg.Add(len(kubeMceh.handlers))
 	for _, h := range kubeMceh.handlers {
-		go func() {
+		go func(handler component.EventHandler) {
 			defer wg.Done()
-
-			h.DeleteService(event)
-		}()
+			handler.DeleteService(event)
+		}(h)
 	}
 	wg.Wait()
 }
@@ -107,6 +107,23 @@ func (kubeMceh *KubeMultiClusterEventHandler) DeleteService(event *types2.Servic
 // DeleteInstance ...
 func (kubeMceh *KubeMultiClusterEventHandler) DeleteInstance(event *types2.ServiceEvent) {
 	klog.Warningf("Deleting an instance has not been implemented yet by multiple clusters handler.")
+}
+
+// ReplaceAccessorInstances ...
+func (kubeMceh *KubeMultiClusterEventHandler) ReplaceAccessorInstances(event *types2.ServiceEvent,
+	getScopedServices func(s string) map[string]struct{}) {
+	klog.Infof("event handler for multiple clusters: Replacing these instances(size: %d)\n%v", len(event.Instances), event.Instances)
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(kubeMceh.handlers))
+	for _, h := range kubeMceh.handlers {
+		go func(handler component.EventHandler) {
+			defer wg.Done()
+
+			handler.ReplaceAccessorInstances(event, getScopedServices)
+		}(h)
+	}
+	wg.Wait()
 }
 
 // AddConfigEntry ...
@@ -127,11 +144,11 @@ func (kubeMceh *KubeMultiClusterEventHandler) ChangeConfigEntry(e *types2.Config
 	wg := sync.WaitGroup{}
 	wg.Add(len(kubeMceh.handlers))
 	for _, h := range kubeMceh.handlers {
-		go func() {
+		go func(handler component.EventHandler) {
 			defer wg.Done()
 
-			h.ChangeConfigEntry(e, cachedServiceFinder)
-		}()
+			handler.ChangeConfigEntry(e, cachedServiceFinder)
+		}(h)
 	}
 	wg.Wait()
 }
@@ -144,11 +161,11 @@ func (kubeMceh *KubeMultiClusterEventHandler) DeleteConfigEntry(e *types2.Config
 	wg := sync.WaitGroup{}
 	wg.Add(len(kubeMceh.handlers))
 	for _, h := range kubeMceh.handlers {
-		go func() {
+		go func(handler component.EventHandler) {
 			defer wg.Done()
 
-			h.DeleteConfigEntry(e, cachedServiceFinder)
-		}()
+			handler.DeleteConfigEntry(e, cachedServiceFinder)
+		}(h)
 	}
 	wg.Wait()
 }
